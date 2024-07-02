@@ -1,0 +1,215 @@
+---
+title: 'California Community College Enrollment Trends'
+author: 'Kathy Trieu'
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+---
+
+# Introduction
+
+Write a brief introduction to your project here. Explain the purpose, objectives, and any other relevant information.
+
+```{r prepareEnvironment, include=FALSE}
+if(!require(renv)) install.packages("renv")
+
+# Initialize 'renv' if the lock file does not exist
+if (!file.exists("renv.lock")) {
+  renv::init()
+}
+
+renv::activate()
+
+```
+
+
+```{r prepareEnvironment2}
+
+packages <- c("tidyverse","caret","testthat")
+
+# Function to install and load packages if not already installed
+installAndLoadPackages <- function(pkg) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg)
+    library(pkg, character.only = TRUE)
+  }
+}
+
+for (pkg in packages) {
+  installAndLoadPackages(pkg)
+}
+
+# caret fails to load for unknown reason
+library(caret)
+renv::snapshot()
+
+# Set global options
+options(stringsAsFactors = FALSE) # Prevent automatic conversion of strings to factors
+options(scipen = 999) # Turn off scientific notation for numbers
+
+# Set custom RStudio settings when an interactive session is initiated
+if (interactive()) {
+  setHook("rstudio.sessionInit", function(newSession) {
+    if (newSession) {
+      # Arrange the RStudio layout and clear the console
+      rstudioapi::executeCommand("layoutDebugConsole")
+      rstudioapi::executeCommand("consoleClear")
+    }
+  })
+}
+
+knitr::opts_chunk$set(
+  echo = TRUE,    # Display code in the output
+  warning = FALSE, # Suppress warnings in the output
+  message = FALSE  # Suppress messages in the output
+)
+
+```
+
+
+```{r createDataSet}
+
+# Capture paths for each dataset
+paths        = dir("./data/",pattern="Enrollment",full.names=TRUE)
+names(paths) = basename(paths)
+
+# Function to clear column names of symbols
+cleanNames <- function(x) {
+  if (!is.data.frame(x)) {
+    stop("Input must be a data frame")
+  }
+  
+  new_names <- sapply(names(x), function(name) { 
+    temp_name <- sub("^[^.]*\\.", "", name) |> tolower()
+    temp_name <- gsub("\\.", "_", temp_name) 
+    temp_name <- gsub(" ", "_", temp_name)
+    temp_name <- gsub("__", "_", temp_name)
+  return(temp_name)
+})
+  names(x)  <- new_names
+  return(x)
+}
+
+# Function to remove columns that surpass a threshold of NA percentage
+removeNA <- function(df, threshold=.6) {
+  na_percentages    <- colMeans(is.na(df))
+  columns_to_remove <- names(na_percentages[na_percentages > threshold])
+  df_clean          <- df[, !names(df) %in% columns_to_remove]
+  return(df_clean)
+}
+
+# Read in datasets and apply cleanNames and removeNA
+dfList <- lapply(paths,read.csv) |>
+  lapply(cleanNames) |>
+  lapply(removeNA)
+
+num_columns <- lapply(dfList, function(df) {
+  ncol(df)
+})
+
+# Print the number of columns for each dataframe
+names(num_columns) <- paste("DataFrame", seq_along(num_columns))
+print(num_columns)
+
+# Combine datasets
+df     <- do.call(plyr::rbind.fill,dfList)
+
+# Function to calculate near-zero variance metrics and remove 
+removeNZV <- function(df) {
+  zeroVarDf   <- nearZeroVar(df, saveMetrics = TRUE)
+  zeroVarCols <- rownames(zeroVarDf)[zeroVarDf$nzv == TRUE]
+  dfFiltered  <- df[, !colnames(df) %in% zeroVarCols]
+  return(dfFiltered)
+}
+
+df <- removeNZV(df) # df without nzv columns
+
+# Identify columns that end with "_1","_2", "undergrad" and remove them
+colsToRemove <- grep("^percent_of_undergrad|^undergrad|(_1|_2)$", colnames(df), value = TRUE)
+df           <- df[, !colnames(df) %in% colsToRemove]
+
+# Change percentages to decimal type
+percentCols        <- grep("percent", colnames(df), value = TRUE)
+df[, percentCols] <- df[, percentCols] / 100
+
+
+# Identify columns containing "institution" and move them to the front
+institutionCols <- grep("institution", colnames(df), value = TRUE)
+otherCols       <- setdiff(colnames(df), institutionCols)
+
+newColOrder <- c(
+  otherCols[1:3],
+  institutionCols,
+  otherCols[4:length(otherCols)]otherCols
+)
+
+df <- df[, newColOrder] # df reordered
+df <- df[, !duplicated(as.list(df))] # df without duplicates
+df[df == ""] <- NA
+
+# Two features were not removed earlier for unknown reason
+df <- removeNA(df)
+
+write.csv(df, file = "./data/cleaned_data.csv", row.names = FALSE,na = "")
+```
+```{r pivot}
+# Create a list of column groups to pivot
+column_groups <- list(
+  race = c("percent_of_total_enrollment_that_are_american_indian_or_alaska_native",
+           "percent_of_total_enrollment_that_are_asian",
+           "percent_of_total_enrollment_that_are_black_or_african_american",
+           "percent_of_total_enrollment_that_are_hispanic_latino", 
+           "percent_of_total_enrollment_that_are_native_hawaiian_or_other_pacific_islander",
+           "percent_of_total_enrollment_that_are_white",
+           "percent_of_total_enrollment_that_are_two_or_more_races",
+           "percent_of_total_enrollment_that_are_race_ethnicity_unknown",
+           "percent_of_total_enrollment_that_are_nonresident_alien","
+           percent_of_total_enrollment_that_are_asian_native_hawaiian_pacific_islander"),
+  adult_enrollment = c("adult_age_25_64_enrollment_full_time_students",
+                       "adult_age_25_64_enrollment_full_time_undergraduate",
+                       "adult_age_25_64_enrollment_part_time_students",
+                       "adult_age_25_64_enrollment_part_time_undergraduate"),
+  student_profile = c("first_time_degree_certificate_seeking_undergraduate_enrollment",
+                      "transfer_in_degree_certificate_seeking_undergraduate_enrollment",
+                      "continuing_degree_certificate_seeking_undergraduate_enrollment",
+                      "nondegree_certificate_seeking_undergraduate_enrollment")
+)
+# Define a function to pivot a group of columns
+pivot_group <- function(data, columns, names_to, values_to) {
+  data %>%
+    pivot_longer(
+      cols = all_of(columns),
+      names_to = names_to,
+      values_to = values_to
+    )
+}
+
+# Pivot each group of columns
+long_data_list <- lapply(names(column_groups), function(group_name) {
+  columns <- column_groups[[group_name]]
+  pivot_group(data, columns, paste0(group_name, "_Metric"), paste0(group_name, "_Value"))
+})
+
+# Join the pivoted data back together
+# Assuming 'School' and 'Year' are the common columns to join on
+long_data <- reduce(long_data_list, function(x, y) {
+  left_join(x, y, by = c("School", "Year"))
+})
+
+# View the reshaped data
+head(long_data)
+
+# Save the reshaped data to a new CSV file
+write_csv(long_data, "path/to/save/reshaped_enrollment_data.csv")
+
+
+
+```
+
+```{r}
+df <- read.csv('./data/cleaned_data.csv')
+
+
+```
+
+

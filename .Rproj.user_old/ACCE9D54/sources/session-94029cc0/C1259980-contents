@@ -1,0 +1,48 @@
+---
+title: 'California Community College Enrollment Trends'
+output:
+  pdf_document: default
+---
+
+```{r functions}
+library(renv)
+renv::init()
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE, 
+  message = FALSE 
+)
+```
+
+```{r createDataSet, cache = TRUE, cache.extra = file.info('./data')}
+paths = dir("./data/",pattern="Enrollment",full.names=TRUE)
+names(paths) = basename(paths)
+
+cleanNames <- function(x) {
+  if (!is.data.frame(x)) {
+    stop("Input must be a data frame")
+  }
+  
+  new_names <- sapply(names(x), function(name) { 
+    temp_name <- sub("^[^.]*\\.", "", name) |> tolower()
+    temp_name <- gsub("\\.", "_", temp_name)
+  return(temp_name)
+})
+  names(x)  <- new_names
+  return(x)
+}
+
+dfList <- lapply(paths,read.csv) |>
+  lapply(cleanNames) |>
+  lapply(removeNA)
+
+df     <- do.call(plyr::rbind.fill,dfList)
+write.csv(df, file = "./data/cleaned_data.csv", row.names = FALSE)
+
+```
+
+
