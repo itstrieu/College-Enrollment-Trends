@@ -8,7 +8,6 @@ output:
 
 # Introduction
 
-Write a brief introduction to your project here. Explain the purpose, objectives, and any other relevant information.
 
 ```{r prepareEnvironment, include=FALSE}
 if(!require(renv)) install.packages("renv")
