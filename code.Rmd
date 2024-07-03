@@ -150,6 +150,8 @@ df <- removeNA(df)
 
 write.csv(df, file = "./data/cleaned_data.csv", row.names = FALSE,na = "")
 ```
+
+
 ```{r pivot}
 # Create a list of column groups to pivot
 column_groups <- list(
@@ -189,7 +191,6 @@ long_data_list <- lapply(names(column_groups), function(group_name) {
 })
 
 # Join the pivoted data back together
-# Assuming 'School' and 'Year' are the common columns to join on
 long_data <- reduce(long_data_list, function(x, y) {
   left_join(x, y, by = c("School", "Year"))
 })
@@ -198,16 +199,11 @@ long_data <- reduce(long_data_list, function(x, y) {
 head(long_data)
 
 # Save the reshaped data to a new CSV file
-write_csv(long_data, "path/to/save/reshaped_enrollment_data.csv")
-
-
-
+write_csv(long_data, "/data/reshaped_enrollment_data.csv")
 ```
 
 ```{r}
-df <- read.csv('./data/cleaned_data.csv')
-
-
+df <- read.csv('./data/reshaped_enrollment_data.csv')
 ```
 
 
