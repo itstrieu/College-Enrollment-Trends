@@ -8,7 +8,6 @@ output:
 
 # Introduction
 
-
 ```{r prepareEnvironment, include=FALSE}
 if(!require(renv)) install.packages("renv")
 
@@ -139,7 +138,7 @@ otherCols       <- setdiff(colnames(df), institutionCols)
 newColOrder <- c(
   otherCols[1:3],
   institutionCols,
-  otherCols[4:length(otherCols)]otherCols
+  otherCols[4:length(otherCols)]
 )
 
 df <- df[, newColOrder] # df reordered
